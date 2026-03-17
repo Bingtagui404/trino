@@ -59,6 +59,7 @@ import io.trino.spi.type.Type;
 import io.trino.spi.type.VarcharType;
 import io.trino.sql.PlannerContext;
 import io.trino.sql.analyzer.Analysis;
+import io.trino.sql.analyzer.ExpressionTreeUtils;
 import io.trino.sql.analyzer.Field;
 import io.trino.sql.analyzer.RelationId;
 import io.trino.sql.analyzer.RelationType;
@@ -95,10 +96,15 @@ import io.trino.sql.planner.planprinter.PlanPrinter;
 import io.trino.sql.planner.sanity.PlanSanityChecker;
 import io.trino.sql.tree.Analyze;
 import io.trino.sql.tree.CreateTableAsSelect;
+import io.trino.sql.tree.CurrentDate;
+import io.trino.sql.tree.CurrentTime;
+import io.trino.sql.tree.CurrentTimestamp;
 import io.trino.sql.tree.Delete;
 import io.trino.sql.tree.ExplainAnalyze;
 import io.trino.sql.tree.Insert;
 import io.trino.sql.tree.LambdaArgumentDeclaration;
+import io.trino.sql.tree.LocalTime;
+import io.trino.sql.tree.LocalTimestamp;
 import io.trino.sql.tree.Merge;
 import io.trino.sql.tree.NodeRef;
 import io.trino.sql.tree.Query;
@@ -687,11 +693,18 @@ public class LogicalPlanner
         List<String> tableFunctions = analysis.getPolymorphicTableFunctions().stream()
                 .map(polymorphicTableFunction -> polymorphicTableFunction.getNode().getName().toString())
                 .collect(toImmutableList());
+        boolean hasNonDeterministicFunctions = analysis.getResolvedFunctions().stream().anyMatch(function -> !function.deterministic())
+                || !ExpressionTreeUtils.extractExpressions(ImmutableList.of(query), CurrentDate.class).isEmpty()
+                || !ExpressionTreeUtils.extractExpressions(ImmutableList.of(query), CurrentTime.class).isEmpty()
+                || !ExpressionTreeUtils.extractExpressions(ImmutableList.of(query), CurrentTimestamp.class).isEmpty()
+                || !ExpressionTreeUtils.extractExpressions(ImmutableList.of(query), LocalTime.class).isEmpty()
+                || !ExpressionTreeUtils.extractExpressions(ImmutableList.of(query), LocalTimestamp.class).isEmpty();
         RefreshMaterializedViewReference writerTarget = new RefreshMaterializedViewReference(
                 viewAnalysis.getTable().toString(),
                 tableHandle,
                 ImmutableList.copyOf(analysis.getTables()),
                 tableFunctions,
+                hasNonDeterministicFunctions,
                 // this is a placeholder value - refresh type will be determined by getInsertPlan based on the plan tree
                 RefreshType.FULL);
         return getInsertPlan(analysis, viewAnalysis.getTable(), query, tableHandle, viewAnalysis.getColumns(), newTableLayout, Optional.of(writerTarget));
